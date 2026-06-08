@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Riego">
+<meta name="theme-color" content="#0F6E56">
+<title>Riego MQTT</title>
+<link rel="manifest" href="manifest.json">
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<style>
+  :root {
+    --bg:       #f4f6f4;
+    --surface:  #ffffff;
+    --surface2: #f0f4f1;
+    --border:   rgba(0,0,0,0.10);
+    --text:     #1a1f1a;
+    --muted:    #6b7a6b;
+    --accent:   #1D9E75;
+    --accent-d: #0F6E56;
+    --accent-l: #E1F5EE;
+    --danger:   #D85A30;
+    --danger-l: #FAECE7;
+    --warn:     #BA7517;
+    --warn-l:   #FAEEDA;
+    --radius:   12px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:       #0e1210;
+      --surface:  #181e18;
+      --surface2: #1e2620;
+      --border:   rgba(255,255,255,0.10);
+      --text:     #e8ede8;
+      --muted:    #8a9e8a;
+      --accent-l: #0a3328;
+      --danger-l: #2a1008;
+      --warn-l:   #251500;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100dvh; }
+
+  header { background: var(--accent-d); color: #fff; padding: 14px 16px 12px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 50; }
+  header h1 { font-size: 17px; font-weight: 600; }
+  #conn-dot { width: 9px; height: 9px; border-radius: 50%; background: #888; flex-shrink: 0; transition: background .3s; }
+  #conn-dot.on  { background: #9FE1CB; }
+  #conn-dot.off { background: #F0997B; }
+
+  #cfg-panel { background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px; display: none; flex-direction: column; gap: 10px; }
+  #cfg-panel.open { display: flex; }
+  .cfg-row { display: flex; flex-direction: column; gap: 4px; }
+  .cfg-row label { font-size: 12px; color: var(--muted); }
+  .cfg-row input { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 14px; background: var(--surface2); color: var(--text); width: 100%; }
+  .btn-cfg { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 10px; font-size: 14px; font-weight: 600; cursor: pointer; }
+
+  nav { display: flex; background: var(--surface); border-bottom: 1px solid var(--border); }
+  nav button { flex: 1; padding: 11px 4px 10px; font-size: 12px; font-weight: 500; color: var(--muted); background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; }
+  nav button.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .page { display: none; padding: 14px 14px 80px; }
+  .page.active { display: block; }
+
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
+  .stat-card .label { font-size: 11px; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .04em; }
+  .stat-card .value { font-size: 18px; font-weight: 600; }
+  .value.ok   { color: var(--accent); }
+  .value.err  { color: var(--danger); }
+  .value.warn { color: var(--warn); }
+
+  .log-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; font-family: 'Courier New', monospace; font-size: 12px; max-height: 200px; overflow-y: auto; }
+  .log-line { padding: 2px 0; border-bottom: 1px solid var(--border); color: var(--text); }
+  .log-line:last-child { border: none; }
+  .ts { color: var(--muted); margin-right: 6px; }
+  .tp { color: var(--accent-d); }
+
+  .sec { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin: 16px 0 8px; }
+
+  .btn-row { display: flex; gap: 8px; margin-bottom: 10px; }
+  .btn { border-radius: 10px; border: 1px solid var(--border); padding: 11px 14px; font-size: 14px; font-weight: 500; cursor: pointer; background: var(--surface); color: var(--text); flex: 1; text-align: center; }
+  .btn:active { opacity: .7; }
+  .btn.green { background: var(--accent-l); color: var(--accent-d); border-color: var(--accent); }
+  .btn.red   { background: var(--danger-l); color: var(--danger);   border-color: var(--danger); }
+  .btn.full  { width: 100%; display: block; }
+
+  .prog-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; overflow: hidden; }
+  .prog-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+  .prog-title { font-size: 15px; font-weight: 600; }
+  .prog-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+  .prog-actions { display: flex; gap: 8px; padding: 0 14px 12px; }
+  .prog-actions .btn { font-size: 13px; padding: 9px 10px; }
+
+  .field-row { display: flex; flex-direction: column; gap: 3px; }
+  .field-row label { font-size: 11px; color: var(--muted); }
+  .field-row input, .field-row select { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 14px; background: var(--surface2); color: var(--text); width: 100%; }
+
+  .toggle { position: relative; width: 44px; height: 24px; flex-shrink: 0; }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; inset: 0; background: var(--border); border-radius: 24px; cursor: pointer; transition: background .2s; }
+  .slider:before { content: ''; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: transform .2s; }
+  .toggle input:checked + .slider { background: var(--accent); }
+  .toggle input:checked + .slider:before { transform: translateX(20px); }
+
+  .abono-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; padding: 12px 14px; }
+  .abono-title { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+
+  #gear-btn { background: none; border: none; cursor: pointer; padding: 4px; }
+  #gear-btn svg { width: 20px; height: 20px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🌿 Riego</h1>
+  <div style="display:flex;align-items:center;gap:8px">
+    <select id="dev-select" onchange="switchDevice(this.value)" style="background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);border-radius:7px;padding:5px 8px;font-size:13px;font-weight:500;cursor:pointer;">
+      <option value="esp32_s3">esp32_s3</option>
+      <option value="esp32_01">esp32_01</option>
+    </select>
+    <div id="conn-dot"></div>
+    <button id="gear-btn" onclick="toggleCfg()" aria-label="Configuración">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </div>
+</header>
+
+<div id="cfg-panel">
+  <div class="cfg-row"><label>Broker host</label><input id="cfg-host" placeholder="xxxx.hivemq.cloud"></div>
+  <div class="cfg-row"><label>Puerto WebSocket TLS</label><input id="cfg-port" type="number" placeholder="8884"></div>
+  <div class="cfg-row"><label>Usuario</label><input id="cfg-user" autocomplete="username"></div>
+  <div class="cfg-row"><label>Contraseña</label><input id="cfg-pass" type="password" autocomplete="current-password"></div>
+  <button class="btn-cfg" onclick="saveAndConnect()">Conectar</button>
+</div>
+
+<nav>
+  <button class="active" onclick="showPage('estado',this)">Estado</button>
+  <button onclick="showPage('sistema',this)">Sistema</button>
+  <button onclick="showPage('programas',this)">Programas</button>
+  <button onclick="showPage('abono',this)">Abono</button>
+</nav>
+
+<!-- Estado -->
+<div id="page-estado" class="page active">
+  <div class="stat-grid">
+    <div class="stat-card"><div class="label">Estado</div><div class="value" id="st-general">—</div></div>
+    <div class="stat-card"><div class="label">Conexión</div><div class="value" id="st-online">—</div></div>
+    <div class="stat-card"><div class="label">Presión</div><div class="value" id="st-presion">—</div></div>
+    <div class="stat-card"><div class="label">Error</div><div class="value" id="st-error">—</div></div>
+  </div>
+  <div class="stat-card" style="margin-bottom:14px">
+    <div class="label">Última actualización</div>
+    <div class="value" id="st-ts" style="font-size:15px">—</div>
+  </div>
+  <p class="sec">Log de mensajes</p>
+  <div class="log-box" id="log-box"><div class="log-line" style="color:var(--muted)">Sin mensajes aún</div></div>
+</div>
+
+<!-- Sistema -->
+<div id="page-sistema" class="page">
+  <p class="sec">Control de riego</p>
+  <div class="btn-row">
+    <button class="btn green" onclick="pub('riego/enable','ON')">✓ Desbloquear</button>
+    <button class="btn red"   onclick="pub('riego/enable','OFF')">✗ Bloquear</button>
+  </div>
+  <p class="sec">Medición de presión</p>
+  <div class="btn-row">
+    <button class="btn green" onclick="pub('cmd/medir_p','1')">Medir presión</button>
+    <button class="btn red"   onclick="pub('cmd/medir_p','0')">Ignorar presión</button>
+  </div>
+  <p class="sec">Consultas</p>
+  <div class="btn-row"><button class="btn full" onclick="pub('cmd/estado','get')">Actualizar estado general</button></div>
+  <div class="btn-row"><button class="btn full" onclick="pub('cmd/get_error','get')">Consultar error actual</button></div>
+  <div class="btn-row"><button class="btn full" onclick="pub('cmd/ultimo_riego','get')">Ver último riego</button></div>
+  <div class="btn-row"><button class="btn full" onclick="pub('prog/estado','get')">Estado de programas</button></div>
+</div>
+
+<!-- Programas -->
+<div id="page-programas" class="page"></div>
+
+<!-- Abono -->
+<div id="page-abono" class="page"></div>
+
+<script>
+let client = null;
+let BASE = 'esp32_s3';
+
+function loadCfg() {
+  const s = localStorage.getItem('riego_cfg');
+  if (!s) return null;
+  const c = JSON.parse(s);
+  document.getElementById('cfg-host').value = c.host || '';
+  document.getElementById('cfg-port').value = c.port || 8884;
+  document.getElementById('cfg-user').value = c.user || '';
+  document.getElementById('cfg-pass').value = c.pass || '';
+  if (c.device) document.getElementById('dev-select').value = c.device;
+  return c;
+}
+
+function getCfg() {
+  return {
+    host:   document.getElementById('cfg-host').value.trim(),
+    port:   parseInt(document.getElementById('cfg-port').value) || 8884,
+    user:   document.getElementById('cfg-user').value.trim(),
+    pass:   document.getElementById('cfg-pass').value.trim(),
+    device: document.getElementById('dev-select').value
+  };
+}
+
+function saveAndConnect() {
+  const c = getCfg();
+  localStorage.setItem('riego_cfg', JSON.stringify(c));
+  toggleCfg();
+  connect(c);
+}
+
+function toggleCfg() {
+  document.getElementById('cfg-panel').classList.toggle('open');
+}
+
+function setDot(state) {
+  const d = document.getElementById('conn-dot');
+  d.className = state;
+}
+
+const STATE_TOPICS = ['/state/general','/state/medir_presion','/online','/state/error','/state/ultimo_riego'];
+
+function switchDevice(newBase) {
+  if (!client || !client.connected) { BASE = newBase; clearStateCards(); return; }
+  STATE_TOPICS.forEach(t => client.unsubscribe(BASE + t));
+  BASE = newBase;
+  clearStateCards();
+  STATE_TOPICS.forEach(t => client.subscribe(BASE + t));
+  addLog('SYS', 'Dispositivo: ' + BASE);
+  const c = getCfg();
+  c.device = newBase;
+  localStorage.setItem('riego_cfg', JSON.stringify(c));
+}
+
+function clearStateCards() {
+  ['st-general','st-online','st-presion','st-error','st-ts'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.textContent = '—'; el.className = 'value'; }
+  });
+}
+
+function connect(c) {
+  if (client) { try { client.end(true); } catch(e){} }
+  BASE = c.device || 'esp32_s3';
+  document.getElementById('dev-select').value = BASE;
+  setDot('connecting');
+  client = mqtt.connect('wss://' + c.host + ':' + c.port + '/mqtt', {
+    username: c.user,
+    password: c.pass,
+    clientId: 'riego_' + Math.random().toString(16).slice(2,8),
+    clean: true,
+    reconnectPeriod: 5000,
+    keepalive: 30
+  });
+  client.on('connect', () => {
+    setDot('on');
+    STATE_TOPICS.forEach(t => client.subscribe(BASE + t));
+    addLog('SYS', 'Conectado · ' + BASE);
+  });
+  client.on('error',   e  => { setDot('off'); addLog('ERR', e.message); });
+  client.on('close',   ()  => setDot('off'));
+  client.on('message', (topic, payload) => {
+    const msg   = payload.toString();
+    const short = topic.replace(BASE + '/', '');
+    addLog(short, msg);
+    handleMsg(short, msg);
+  });
+}
+
+function handleMsg(short, msg) {
+  if (short === 'state/general') {
+    const m = msg.match(/^(\d{2}-\d{2} \d{2}:\d{2})\s*\|\s*(.+)$/);
+    if (m) {
+      document.getElementById('st-ts').textContent = m[1];
+      const v = document.getElementById('st-general');
+      v.textContent = m[2].trim();
+      v.className = 'value ' + stateClass(m[2]);
+    } else {
+      document.getElementById('st-general').textContent = msg;
+    }
+  }
+  if (short === 'state/medir_presion') {
+    const v = document.getElementById('st-presion');
+    v.textContent = msg;
+    v.className = 'value ' + (msg.includes('Ignorar') ? 'warn' : 'ok');
+  }
+  if (short === 'online') {
+    const v = document.getElementById('st-online');
+    v.textContent = msg === '1' ? 'Online' : 'Offline';
+    v.className = 'value ' + (msg === '1' ? 'ok' : 'err');
+  }
+  if (short === 'state/error') {
+    const v = document.getElementById('st-error');
+    v.textContent = msg;
+    v.className = 'value ' + (msg === 'NONE' ? 'ok' : 'err');
+  }
+}
+
+function stateClass(s) {
+  const u = s.toUpperCase();
+  if (u.includes('ERROR') || u.includes('BLOQUEO')) return 'err';
+  if (u.includes('IDLE') || u.includes('RIEGO'))    return 'ok';
+  return '';
+}
+
+function pub(subtopic, payload) {
+  if (!client || !client.connected) { alert('No conectado al broker'); return; }
+  client.publish(BASE + '/' + subtopic, payload);
+  addLog('→ ' + subtopic, payload);
+}
+
+function addLog(topic, msg) {
+  const box = document.getElementById('log-box');
+  const now = new Date();
+  const ts  = [now.getHours(), now.getMinutes(), now.getSeconds()]
+                .map(n => String(n).padStart(2,'0')).join(':');
+  if (box.firstChild && box.firstChild.style && box.firstChild.style.color === 'var(--muted)') box.innerHTML = '';
+  const line = document.createElement('div');
+  line.className = 'log-line';
+  line.innerHTML = '<span class="ts">' + ts + '</span><span class="tp">' + topic + '</span> ' + msg.replace(/</g,'&lt;');
+  box.insertBefore(line, box.firstChild);
+  if (box.children.length > 80) box.removeChild(box.lastChild);
+}
+
+/* ── Programas ── */
+function buildProgramas() {
+  const pg = document.getElementById('page-programas');
+  let html = '';
+  for (let n = 1; n <= 4; n++) {
+    html += `<div class="prog-card">
+      <div class="prog-head">
+        <span class="prog-title">Programa ${n}</span>
+        <label class="toggle"><input type="checkbox" id="p${n}-activo" onchange="pub('prog/activo/${n}',this.checked?'1':'0')"><span class="slider"></span></label>
+      </div>
+      <div class="prog-body">
+        <div class="field-row"><label>Tipo de riego</label>
+          <select id="p${n}-tipo" onchange="pub('prog/tipo/${n}',this.value)">
+            <option>RIEGO_A</option><option>RIEGO_B</option><option>RIEGO_C</option>
+          </select></div>
+        <div class="field-row"><label>Hora inicio (HH:MM)</label>
+          <input type="time" id="p${n}-start"></div>
+        <div class="field-row"><label>Duración (minutos)</label>
+          <input type="number" min="1" id="p${n}-dur" placeholder="ej. 30"></div>
+        <div class="field-row"><label>Días activos (ej. DLMXJVS)</label>
+          <input type="text" id="p${n}-dias" placeholder="DLMXJVS" maxlength="7"></div>
+      </div>
+      <div class="prog-actions">
+        <button class="btn green" onclick="sendProg(${n})">Guardar</button>
+        <button class="btn" onclick="pub('prog/estado','get')">Ver estado</button>
+      </div>
+    </div>`;
+  }
+  pg.innerHTML = html;
+}
+
+function sendProg(n) {
+  const start = document.getElementById('p'+n+'-start').value;
+  const dur   = document.getElementById('p'+n+'-dur').value;
+  const dias  = document.getElementById('p'+n+'-dias').value;
+  if (start) pub('prog/start/'+n, start);
+  if (dur)   pub('prog/duracion/'+n, dur);
+  if (dias)  pub('prog/dias/'+n, dias);
+}
+
+/* ── Abono ── */
+function buildAbono() {
+  const pg = document.getElementById('page-abono');
+  let html = '';
+  for (let n = 1; n <= 4; n++) {
+    html += `<div class="abono-card">
+      <div class="abono-title">Abono — Programa ${n}</div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <label class="toggle"><input type="checkbox" id="a${n}-activo" onchange="pub('cmd/abono/activo/${n}',this.checked?'1':'0')"><span class="slider"></span></label>
+        <span style="font-size:14px;color:var(--muted)">Activo</span>
+      </div>
+      <div class="field-row" style="margin-bottom:8px"><label>Duración (minutos)</label>
+        <input type="number" min="0" id="a${n}-dur" placeholder="ej. 5"></div>
+      <div class="field-row" style="margin-bottom:10px"><label>Días (ej. LUN,MIE,VIE)</label>
+        <input type="text" id="a${n}-dias" placeholder="LUN,MIE,VIE"></div>
+      <button class="btn green full" onclick="sendAbono(${n})">Guardar abono ${n}</button>
+    </div>`;
+  }
+  pg.innerHTML = html;
+}
+
+function sendAbono(n) {
+  const dur  = document.getElementById('a'+n+'-dur').value;
+  const dias = document.getElementById('a'+n+'-dias').value;
+  if (dur)  pub('cmd/abono/duracion/'+n, dur);
+  if (dias) pub('cmd/abono/dias/'+n, dias);
+}
+
+function showPage(name, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  btn.classList.add('active');
+}
+
+buildProgramas();
+buildAbono();
+const saved = loadCfg();
+if (saved && saved.host && saved.user && saved.pass) connect(saved);
+else toggleCfg();
+</script>
+</body>
+</html>
