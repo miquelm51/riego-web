@@ -175,6 +175,27 @@
   <div class="btn-row"><button class="btn full" onclick="pub('cmd/get_error','get')">Consultar error actual</button></div>
   <div class="btn-row"><button class="btn full" onclick="pub('cmd/ultimo_riego','get')">Ver último riego</button></div>
   <div class="btn-row"><button class="btn full" onclick="pub('prog/estado','get')">Estado de programas</button></div>
+
+  <p class="sec">Último riego</p>
+  <div class="stat-card" style="margin-bottom:10px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
+      <div><div class="label">Inicio</div><div id="ur-inicio" style="font-size:14px;font-weight:600;margin-top:2px">—</div></div>
+      <div><div class="label">Duración</div><div id="ur-duracion" style="font-size:14px;font-weight:600;margin-top:2px">—</div></div>
+      <div><div class="label">Volumen</div><div id="ur-volumen" style="font-size:14px;font-weight:600;margin-top:2px">—</div></div>
+      <div><div class="label">Error</div><div id="ur-error" style="font-size:14px;font-weight:600;margin-top:2px">—</div></div>
+      <div style="grid-column:1/-1"><div class="label">Código error</div><div id="ur-codigo" style="font-size:13px;font-weight:600;margin-top:2px">—</div></div>
+    </div>
+  </div>
+  <div class="stat-card" style="margin-bottom:10px">
+    <div class="label" style="margin-bottom:6px">Presión (bar)</div>
+    <div id="ur-presion" style="font-family:'Courier New',monospace;font-size:13px;color:var(--text);word-break:break-all">—</div>
+  </div>
+  <div class="stat-card" style="margin-bottom:10px">
+    <div class="label" style="margin-bottom:6px">Flujo (l/min)</div>
+    <div id="ur-flujo" style="font-family:'Courier New',monospace;font-size:13px;color:var(--text);word-break:break-all">—</div>
+  </div>
+
+  </div>
 </div>
 
 <!-- Programas -->
@@ -226,7 +247,9 @@ function setDot(state) {
 }
 
 const STATE_TOPICS = [
-  '/state/general','/state/medir_presion','/online','/state/error','/state/ultimo_riego',
+  '/state/general','/state/medir_presion','/online','/state/error',
+  '/status/ultimo_riego/inicio','/status/ultimo_riego/duracion','/status/ultimo_riego/volumen',
+  '/status/ultimo_riego/flujo','/status/ultimo_riego/presion','/status/ultimo_riego/error','/status/ultimo_riego/codigo',
   '/status/programa/activo/+','/status/programa/tipo/+','/status/programa/start/+',
   '/status/programa/duracion/+','/status/programa/dias/+',
   '/status/programa/abono/activo/+','/status/programa/abono/duracion/+','/status/programa/abono/dias/+'
@@ -305,6 +328,21 @@ function handleMsg(short, msg) {
     const v = document.getElementById('st-error');
     v.textContent = msg;
     v.className = 'value ' + (msg === 'NONE' ? 'ok' : 'err');
+  }
+
+  // ── Último riego ─────────────────────────────────────────
+  const UR = {
+    'status/ultimo_riego/inicio':   'ur-inicio',
+    'status/ultimo_riego/duracion': 'ur-duracion',
+    'status/ultimo_riego/volumen':  'ur-volumen',
+    'status/ultimo_riego/flujo':    'ur-flujo',
+    'status/ultimo_riego/presion':  'ur-presion',
+    'status/ultimo_riego/codigo':   'ur-codigo'
+  };
+  if (UR[short]) { const el = document.getElementById(UR[short]); if (el) el.textContent = msg; }
+  if (short === 'status/ultimo_riego/error') {
+    const el = document.getElementById('ur-error');
+    if (el) { el.textContent = msg; el.style.color = msg === 'NO' ? 'var(--accent)' : 'var(--danger)'; }
   }
 
   // ── Estado de programas ──────────────────────────────────
