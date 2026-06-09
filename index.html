@@ -154,6 +154,17 @@
     <div class="label">Última actualización</div>
     <div class="value" id="st-ts" style="font-size:15px">—</div>
   </div>
+  <p class="sec">Riego en curso</p>
+  <div id="riego-card" style="margin-bottom:14px">
+    <div class="stat-grid">
+      <div class="stat-card"><div class="label">Presión</div><div class="value ok" id="rc-presion">—</div></div>
+      <div class="stat-card"><div class="label">Flujo</div><div class="value ok" id="rc-flujo">—</div></div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Volumen total</div>
+      <div class="value" id="rc-vol" style="font-size:15px">—</div>
+    </div>
+  </div>
   <p class="sec">Log de mensajes</p>
   <div class="log-box" id="log-box"><div class="log-line" style="color:var(--muted)">Sin mensajes aún</div></div>
 </div>
@@ -247,7 +258,7 @@ function setDot(state) {
 }
 
 const STATE_TOPICS = [
-  '/state/general','/state/medir_presion','/online','/state/error',
+  '/state/general','/state/medir_presion','/online','/state/error','/state/riego',
   '/status/ultimo_riego/inicio','/status/ultimo_riego/duracion','/status/ultimo_riego/volumen',
   '/status/ultimo_riego/flujo','/status/ultimo_riego/presion','/status/ultimo_riego/error','/status/ultimo_riego/codigo',
   '/status/programa/activo/+','/status/programa/tipo/+','/status/programa/start/+',
@@ -328,6 +339,22 @@ function handleMsg(short, msg) {
     const v = document.getElementById('st-error');
     v.textContent = msg;
     v.className = 'value ' + (msg === 'NONE' ? 'ok' : 'err');
+  }
+  if (short === 'state/riego') {
+    const activo = msg.startsWith('{') && msg.includes('presion');
+    document.getElementById('riego-card').style.opacity = activo ? '1' : '0.4';
+    if (activo) {
+      try {
+        const d = JSON.parse(msg);
+        document.getElementById('rc-presion').textContent = d.presion.toFixed(2) + ' bar';
+        document.getElementById('rc-flujo').textContent   = d.flujo.toFixed(2)   + ' l/min';
+        document.getElementById('rc-vol').textContent     = d.vol_total.toFixed(3) + ' m³';
+      } catch(e) {}
+    } else {
+      document.getElementById('rc-presion').textContent = '—';
+      document.getElementById('rc-flujo').textContent   = '—';
+      document.getElementById('rc-vol').textContent     = 'Esperando riego';
+    }
   }
 
   // ── Último riego ─────────────────────────────────────────
