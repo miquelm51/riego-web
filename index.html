@@ -185,7 +185,7 @@
   <div class="btn-row"><button class="btn full" onclick="pub('cmd/estado','get')">Actualizar estado general</button></div>
   <div class="btn-row"><button class="btn full" onclick="pub('cmd/get_error','get')">Consultar error actual</button></div>
   <div class="btn-row"><button class="btn full" onclick="pub('cmd/ultimo_riego','get')">Ver último riego</button></div>
-  <div class="btn-row"><button class="btn full" onclick="pub('prog/estado','get')">Estado de programas</button></div>
+  <div class="btn-row"><button class="btn full" onclick="pub('cmd/programa/estado','get')">Estado de programas</button></div>
 
   <p class="sec">Último riego</p>
   <div class="stat-card" style="margin-bottom:10px">
@@ -436,11 +436,11 @@ function buildProgramas() {
     html += `<div class="prog-card">
       <div class="prog-head">
         <span class="prog-title">Programa ${n}</span>
-        <label class="toggle"><input type="checkbox" id="p${n}-activo" onchange="pub('prog/activo/${n}',this.checked?'1':'0')"><span class="slider"></span></label>
+        <label class="toggle"><input type="checkbox" id="p${n}-activo" onchange="pub('cmd/programa/activo/${n}',this.checked?'1':'0')"><span class="slider"></span></label>
       </div>
       <div class="prog-body">
         <div class="field-row"><label>Tipo de riego</label>
-          <select id="p${n}-tipo" onchange="pub('prog/tipo/${n}',this.value)">
+          <select id="p${n}-tipo" onchange="pub('cmd/programa/tipo/${n}',this.value)">
             <option>RIEGO_A</option><option>RIEGO_B</option><option>RIEGO_C</option>
           </select></div>
         <div class="field-row"><label>Hora inicio (HH:MM)</label>
@@ -452,7 +452,7 @@ function buildProgramas() {
       </div>
       <div class="prog-actions">
         <button class="btn green" onclick="sendProg(${n})">Guardar</button>
-        <button class="btn" onclick="pub('prog/get/${n}','get')">Ver estado</button>
+        <button class="btn" onclick="pub('cmd/programa/get/${n}','get')">Ver estado</button>
       </div>
     </div>`;
   }
@@ -463,9 +463,9 @@ function sendProg(n) {
   const start = document.getElementById('p'+n+'-start').value;
   const dur   = document.getElementById('p'+n+'-dur').value;
   const dias  = document.getElementById('p'+n+'-dias').value;
-  if (start) pub('prog/start/'+n, start);
-  if (dur)   pub('prog/duracion/'+n, dur);
-  if (dias)  pub('prog/dias/'+n, dias);
+  if (start) pub('cmd/programa/start/'+n, start);
+  if (dur)   pub('cmd/programa/duracion/'+n, dur);
+  if (dias)  pub('cmd/programa/dias/'+n, dias);
 }
 
 /* ── Abono ── */
