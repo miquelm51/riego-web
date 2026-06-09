@@ -387,7 +387,7 @@ function buildProgramas() {
       </div>
       <div class="prog-actions">
         <button class="btn green" onclick="sendProg(${n})">Guardar</button>
-        <button class="btn" onclick="pub('prog/estado','${n}')">Ver estado</button>
+        <button class="btn" onclick="pub('prog/get/${n}','get')">Ver estado</button>
       </div>
     </div>`;
   }
