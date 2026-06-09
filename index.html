@@ -225,7 +225,12 @@ function setDot(state) {
   d.className = state;
 }
 
-const STATE_TOPICS = ['/state/general','/state/medir_presion','/online','/state/error','/state/ultimo_riego'];
+const STATE_TOPICS = [
+  '/state/general','/state/medir_presion','/online','/state/error','/state/ultimo_riego',
+  '/status/programa/activo/+','/status/programa/tipo/+','/status/programa/start/+',
+  '/status/programa/duracion/+','/status/programa/dias/+',
+  '/status/programa/abono/activo/+','/status/programa/abono/duracion/+','/status/programa/abono/dias/+'
+];
 
 function switchDevice(newBase) {
   if (!client || !client.connected) { BASE = newBase; clearStateCards(); return; }
@@ -301,6 +306,35 @@ function handleMsg(short, msg) {
     v.textContent = msg;
     v.className = 'value ' + (msg === 'NONE' ? 'ok' : 'err');
   }
+
+  // ── Estado de programas ──────────────────────────────────
+  // short = "status/programa/campo/N"  o  "status/programa/abono/campo/N"
+  let m;
+
+  m = short.match(/^status\/programa\/activo\/(\d)$/);
+  if (m) { const el = document.getElementById('p'+m[1]+'-activo'); if (el) el.checked = msg === '1'; }
+
+  m = short.match(/^status\/programa\/tipo\/(\d)$/);
+  if (m) { const el = document.getElementById('p'+m[1]+'-tipo'); if (el) el.value = msg; }
+
+  m = short.match(/^status\/programa\/start\/(\d)$/);
+  if (m) { const el = document.getElementById('p'+m[1]+'-start'); if (el) el.value = msg; }
+
+  m = short.match(/^status\/programa\/duracion\/(\d)$/);
+  if (m) { const el = document.getElementById('p'+m[1]+'-dur'); if (el) el.value = msg; }
+
+  m = short.match(/^status\/programa\/dias\/(\d)$/);
+  if (m) { const el = document.getElementById('p'+m[1]+'-dias'); if (el) el.value = msg; }
+
+  // ── Estado abono ─────────────────────────────────────────
+  m = short.match(/^status\/programa\/abono\/activo\/(\d)$/);
+  if (m) { const el = document.getElementById('a'+m[1]+'-activo'); if (el) el.checked = msg === '1'; }
+
+  m = short.match(/^status\/programa\/abono\/duracion\/(\d)$/);
+  if (m) { const el = document.getElementById('a'+m[1]+'-dur'); if (el) el.value = msg; }
+
+  m = short.match(/^status\/programa\/abono\/dias\/(\d)$/);
+  if (m) { const el = document.getElementById('a'+m[1]+'-dias'); if (el) el.value = msg; }
 }
 
 function stateClass(s) {
@@ -353,7 +387,7 @@ function buildProgramas() {
       </div>
       <div class="prog-actions">
         <button class="btn green" onclick="sendProg(${n})">Guardar</button>
-        <button class="btn" onclick="pub('prog/estado','get')">Ver estado</button>
+        <button class="btn" onclick="pub('prog/estado','${n}')">Ver estado</button>
       </div>
     </div>`;
   }
