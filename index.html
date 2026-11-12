@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="es">
-<head> 
+<head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -9,7 +9,7 @@
 <meta name="theme-color" content="#0F6E56">
 <title>Riego MQTT</title>
 <link rel="manifest" href="manifest.json">
-<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
 <style>
   :root {
     --bg:       #f4f6f4;
@@ -48,6 +48,7 @@
   #conn-dot { width: 9px; height: 9px; border-radius: 50%; background: #888; flex-shrink: 0; transition: background .3s; }
   #conn-dot.on  { background: #9FE1CB; }
   #conn-dot.off { background: #F0997B; }
+  #conn-dot.connecting { background: #F5D36B; }
 
   #cfg-panel { background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px; display: none; flex-direction: column; gap: 10px; }
   #cfg-panel.open { display: flex; }
@@ -55,6 +56,9 @@
   .cfg-row label { font-size: 12px; color: var(--muted); }
   .cfg-row input { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 14px; background: var(--surface2); color: var(--text); width: 100%; }
   .btn-cfg { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 10px; font-size: 14px; font-weight: 600; cursor: pointer; }
+  #cfg-status { font-size: 12px; color: var(--muted); word-break: break-all; min-height: 16px; }
+  #cfg-status.ok  { color: var(--accent); }
+  #cfg-status.err { color: var(--danger); }
 
   nav { display: flex; background: var(--surface); border-bottom: 1px solid var(--border); }
   nav button { flex: 1; padding: 11px 4px 10px; font-size: 12px; font-weight: 500; color: var(--muted); background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; }
@@ -128,10 +132,12 @@
 </header>
 
 <div id="cfg-panel">
-  <div class="cfg-row"><label>Broker host</label><input id="cfg-host" placeholder="xxxx.hivemq.cloud"></div>
-  <div class="cfg-row"><label>Puerto WebSocket TLS</label><input id="cfg-port" type="number" placeholder="8884"></div>
-  <div class="cfg-row"><label>Usuario</label><input id="cfg-user" autocomplete="username"></div>
+  <div class="cfg-row"><label>Broker host (solo el dominio, sin wss:// ni puerto)</label><input id="cfg-host" placeholder="mqtt.tudominio.com" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
+  <div class="cfg-row"><label>Puerto WebSocket TLS</label><input id="cfg-port" type="number" placeholder="443"></div>
+  <div class="cfg-row"><label>Ruta (path)</label><input id="cfg-path" placeholder="/mqtt" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
+  <div class="cfg-row"><label>Usuario</label><input id="cfg-user" autocomplete="username" autocapitalize="off"></div>
   <div class="cfg-row"><label>Contraseña</label><input id="cfg-pass" type="password" autocomplete="current-password"></div>
+  <div id="cfg-status"></div>
   <button class="btn-cfg" onclick="saveAndConnect()">Conectar</button>
 </div>
 
@@ -205,8 +211,6 @@
     <div class="label" style="margin-bottom:6px">Flujo (l/min)</div>
     <div id="ur-flujo" style="font-family:'Courier New',monospace;font-size:13px;color:var(--text);word-break:break-all">—</div>
   </div>
-
-  </div>
 </div>
 
 <!-- Programas -->
@@ -219,12 +223,26 @@
 let client = null;
 let BASE = 'esp32_s3';
 
+/* ── Configuración ───────────────────────────────────────── */
+
+// Deja solo el dominio: quita esquema (wss://), ruta y puerto si el usuario los pegó
+function cleanHost(h) {
+  return h.replace(/^[a-z]+:\/\//i, '').replace(/\/.*$/, '').replace(/:\d+$/, '');
+}
+
+function setStatus(text, cls) {
+  const el = document.getElementById('cfg-status');
+  el.textContent = text || '';
+  el.className = cls || '';
+}
+
 function loadCfg() {
   const s = localStorage.getItem('riego_cfg');
   if (!s) return null;
   const c = JSON.parse(s);
   document.getElementById('cfg-host').value = c.host || '';
   document.getElementById('cfg-port').value = c.port || 8884;
+  document.getElementById('cfg-path').value = c.path || '/mqtt';
   document.getElementById('cfg-user').value = c.user || '';
   document.getElementById('cfg-pass').value = c.pass || '';
   if (c.device) document.getElementById('dev-select').value = c.device;
@@ -232,9 +250,12 @@ function loadCfg() {
 }
 
 function getCfg() {
+  let path = document.getElementById('cfg-path').value.trim() || '/mqtt';
+  if (!path.startsWith('/')) path = '/' + path;
   return {
-    host:   document.getElementById('cfg-host').value.trim(),
+    host:   cleanHost(document.getElementById('cfg-host').value.trim()),
     port:   parseInt(document.getElementById('cfg-port').value) || 8884,
+    path:   path,
     user:   document.getElementById('cfg-user').value.trim(),
     pass:   document.getElementById('cfg-pass').value.trim(),
     device: document.getElementById('dev-select').value
@@ -244,8 +265,8 @@ function getCfg() {
 function saveAndConnect() {
   const c = getCfg();
   localStorage.setItem('riego_cfg', JSON.stringify(c));
-  toggleCfg();
-  connect(c);
+  document.getElementById('cfg-host').value = c.host;   // refleja el host ya limpio
+  connect(c);   // el panel se cierra solo cuando la conexión tiene éxito
 }
 
 function toggleCfg() {
@@ -253,9 +274,10 @@ function toggleCfg() {
 }
 
 function setDot(state) {
-  const d = document.getElementById('conn-dot');
-  d.className = state;
+  document.getElementById('conn-dot').className = state;
 }
+
+/* ── MQTT ────────────────────────────────────────────────── */
 
 const STATE_TOPICS = [
   '/state/general','/state/medir_presion','/online','/state/error','/state/riego',
@@ -290,21 +312,46 @@ function connect(c) {
   BASE = c.device || 'esp32_s3';
   document.getElementById('dev-select').value = BASE;
   setDot('connecting');
-  client = mqtt.connect('wss://' + c.host + ':' + c.port + '/mqtt', {
+
+  const url = 'wss://' + c.host + ':' + c.port + (c.path || '/mqtt');
+  setStatus('Conectando a ' + url + ' ...');
+  console.log('MQTT connect →', url);
+
+  client = mqtt.connect(url, {
     username: c.user,
     password: c.pass,
     clientId: 'riego_' + Math.random().toString(16).slice(2,8),
     clean: true,
     reconnectPeriod: 5000,
+    connectTimeout: 10000,
     keepalive: 30
   });
+
   client.on('connect', () => {
     setDot('on');
+    setStatus('✓ Conectado a ' + url, 'ok');
+    const p = document.getElementById('cfg-panel');
+    if (p.classList.contains('open')) setTimeout(() => p.classList.remove('open'), 800);
     STATE_TOPICS.forEach(t => client.subscribe(BASE + t));
     addLog('SYS', 'Conectado · ' + BASE);
   });
-  client.on('error',   e  => { setDot('off'); addLog('ERR', e.message); });
-  client.on('close',   ()  => setDot('off'));
+
+  client.on('error', e => {
+    setDot('off');
+    setStatus('Error: ' + e.message, 'err');
+    addLog('ERR', e.message);
+    console.error('MQTT error', e);
+  });
+
+  client.on('close', () => {
+    setDot('off');
+    // Si ya hay un error concreto mostrado, no lo pisamos
+    const st = document.getElementById('cfg-status');
+    if (!st.classList.contains('err')) {
+      setStatus('Sin conexión con ' + url + ' · revisa host, puerto, ruta, certificado TLS y credenciales (F12 → Consola)', 'err');
+    }
+  });
+
   client.on('message', (topic, payload) => {
     const msg   = payload.toString();
     const short = topic.replace(BASE + '/', '');
@@ -373,7 +420,6 @@ function handleMsg(short, msg) {
   }
 
   // ── Estado de programas ──────────────────────────────────
-  // short = "status/programa/campo/N"  o  "status/programa/abono/campo/N"
   let m;
 
   m = short.match(/^status\/programa\/activo\/(\d)$/);
@@ -461,53 +507,4 @@ function buildProgramas() {
 
 function sendProg(n) {
   const start = document.getElementById('p'+n+'-start').value;
-  const dur   = document.getElementById('p'+n+'-dur').value;
-  const dias  = document.getElementById('p'+n+'-dias').value;
-  if (start) pub('cmd/programa/start/'+n, start);
-  if (dur)   pub('cmd/programa/duracion/'+n, dur);
-  if (dias)  pub('cmd/programa/dias/'+n, dias);
-}
-
-/* ── Abono ── */
-function buildAbono() {
-  const pg = document.getElementById('page-abono');
-  let html = '';
-  for (let n = 1; n <= 4; n++) {
-    html += `<div class="abono-card">
-      <div class="abono-title">Abono — Programa ${n}</div>
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-        <label class="toggle"><input type="checkbox" id="a${n}-activo" onchange="pub('cmd/abono/activo/${n}',this.checked?'1':'0')"><span class="slider"></span></label>
-        <span style="font-size:14px;color:var(--muted)">Activo</span>
-      </div>
-      <div class="field-row" style="margin-bottom:8px"><label>Duración (minutos)</label>
-        <input type="number" min="0" id="a${n}-dur" placeholder="ej. 5"></div>
-      <div class="field-row" style="margin-bottom:10px"><label>Días (ej. LUN,MIE,VIE)</label>
-        <input type="text" id="a${n}-dias" placeholder="LUN,MIE,VIE"></div>
-      <button class="btn green full" onclick="sendAbono(${n})">Guardar abono ${n}</button>
-    </div>`;
-  }
-  pg.innerHTML = html;
-}
-
-function sendAbono(n) {
-  const dur  = document.getElementById('a'+n+'-dur').value;
-  const dias = document.getElementById('a'+n+'-dias').value;
-  if (dur)  pub('cmd/abono/duracion/'+n, dur);
-  if (dias) pub('cmd/abono/dias/'+n, dias);
-}
-
-function showPage(name, btn) {
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
-  document.getElementById('page-'+name).classList.add('active');
-  btn.classList.add('active');
-}
-
-buildProgramas();
-buildAbono();
-const saved = loadCfg();
-if (saved && saved.host && saved.user && saved.pass) connect(saved);
-else toggleCfg();
-</script>
-</body>
-</html>
+  const dur   = document.getElementById('
