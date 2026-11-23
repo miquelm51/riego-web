@@ -75,7 +75,7 @@
   .value.err  { color: var(--danger); }
   .value.warn { color: var(--warn); }
 
-  .log-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; font-family: 'Courier New', monospace; font-size: 12px; max-height: 200px; overflow-y: auto; }
+  .log-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; font-family: 'Courier New', monospace; font-size: 12px; max-height: 320px; overflow-y: auto; }
   .log-line { padding: 2px 0; border-bottom: 1px solid var(--border); color: var(--text); }
   .log-line:last-child { border: none; }
   .ts { color: var(--muted); margin-right: 6px; }
@@ -279,21 +279,23 @@ function setDot(state) {
 
 /* ── MQTT ────────────────────────────────────────────────── */
 
-const STATE_TOPICS = [
-  '/state/general','/state/medir_presion','/online','/state/error','/state/riego',
-  '/status/ultimo_riego/inicio','/status/ultimo_riego/duracion','/status/ultimo_riego/volumen',
-  '/status/ultimo_riego/flujo','/status/ultimo_riego/presion','/status/ultimo_riego/error','/status/ultimo_riego/codigo',
-  '/status/programa/activo/+','/status/programa/tipo/+','/status/programa/start/+',
-  '/status/programa/duracion/+','/status/programa/dias/+',
-  '/status/programa/abono/activo/+','/status/programa/abono/duracion/+','/status/programa/abono/dias/+'
-];
+// DIAGNÓSTICO v2: suscripción a '#' (todo lo que el usuario pueda ver en el broker).
+// El log mostrará el resultado de la suscripción y TODOS los mensajes entrantes con su topic completo.
+const DIAG_FILTERS = ['#'];
+
+function subscribeAll() {
+  DIAG_FILTERS.forEach(f => {
+    client.subscribe(f, { qos: 0 }, (err, granted) => {
+      if (err) { addLog('SUB✗', f + ' · ' + err.message); return; }
+      (granted || []).forEach(g => addLog('SUB', g.topic + ' · qos ' + g.qos + (g.qos === 128 ? '  ← DENEGADA por el broker' : '  ← ok')));
+    });
+  });
+}
 
 function switchDevice(newBase) {
   if (!client || !client.connected) { BASE = newBase; clearStateCards(); return; }
-  STATE_TOPICS.forEach(t => client.unsubscribe(BASE + t));
   BASE = newBase;
   clearStateCards();
-  STATE_TOPICS.forEach(t => client.subscribe(BASE + t));
   addLog('SYS', 'Dispositivo: ' + BASE);
   const c = getCfg();
   c.device = newBase;
@@ -332,8 +334,8 @@ function connect(c) {
     setStatus('✓ Conectado a ' + url, 'ok');
     const p = document.getElementById('cfg-panel');
     if (p.classList.contains('open')) setTimeout(() => p.classList.remove('open'), 800);
-    STATE_TOPICS.forEach(t => client.subscribe(BASE + t));
-    addLog('SYS', 'Conectado · ' + BASE);
+    addLog('SYS', 'Conectado · ' + BASE + ' · versión diagnóstico v2');
+    subscribeAll();
   });
 
   client.on('error', e => {
@@ -354,9 +356,9 @@ function connect(c) {
 
   client.on('message', (topic, payload) => {
     const msg   = payload.toString();
-    const short = topic.replace(BASE + '/', '');
+    const short = topic.startsWith(BASE + '/') ? topic.slice(BASE.length + 1) : topic;
     addLog(short, msg);
-    handleMsg(short, msg);
+    if (topic.startsWith(BASE + '/')) handleMsg(short, msg);
   });
 }
 
@@ -471,7 +473,7 @@ function addLog(topic, msg) {
   line.className = 'log-line';
   line.innerHTML = '<span class="ts">' + ts + '</span><span class="tp">' + topic + '</span> ' + msg.replace(/</g,'&lt;');
   box.insertBefore(line, box.firstChild);
-  if (box.children.length > 80) box.removeChild(box.lastChild);
+  if (box.children.length > 200) box.removeChild(box.lastChild);
 }
 
 /* ── Programas ── */
